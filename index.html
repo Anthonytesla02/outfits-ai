@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Outfit Generator</title>
+
+  <!-- Firebase SDK -->
+  <script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-analytics.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
+
+  // Your web app's Firebase configuration
+  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+  const firebaseConfig = {
+    apiKey: "AIzaSyCHGiYwZ0u_n7WiQU2hFJOj2Nw2goQLU4A",
+    authDomain: "outfits-ai.firebaseapp.com",
+    projectId: "outfits-ai",
+    storageBucket: "outfits-ai.appspot.com",
+    messagingSenderId: "372649037496",
+    appId: "1:372649037496:web:3bca4e265287c0776dee4d",
+    measurementId: "G-SNTB6EMBPG"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+</script>
+
+  <!-- TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+
+  <script>
+    // Firebase configuration (replace with your actual Firebase config)
+    const firebaseConfig = {
+    apiKey: "AIzaSyCHGiYwZ0u_n7WiQU2hFJOj2Nw2goQLU4A",
+    authDomain: "outfits-ai.firebaseapp.com",
+    projectId: "outfits-ai",
+    storageBucket: "outfits-ai.appspot.com",
+    messagingSenderId: "372649037496",
+    appId: "1:372649037496:web:3bca4e265287c0776dee4d",
+    measurementId: "G-SNTB6EMBPG"
+  };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const storage = firebase.storage();
+
+    let model;
+
+    // Load the model from Firebase
+    async function loadModel() {
+      const modelRef = storage.ref('outfit-generator/model/model.json');
+      try {
+        const url = await modelRef.getDownloadURL();
+        model = await tf.loadLayersModel(url);
+        console.log("Model loaded successfully from Firebase");
+      } catch (error) {
+        console.error("Error loading model:", error);
+      }
+    }
+
+    // Save the model to Firebase
+    async function saveModelToFirebase() {
+      const saveResults = await model.save('downloads://model'); // Save locally first
+      const modelRef = storage.ref('outfit-generator/model');
+      for (const file of saveResults.modelArtifactsInfo) {
+        const fileRef = modelRef.child(file.name);
+        await fileRef.put(file); // Upload each file
+      }
+      console.log("Model saved to Firebase");
+    }
+
+    // Predict outfit based on colors and occasion
+    function predictOutfit(shirtColor, pantsColor, occasion) {
+      const colorMapping = {
+        "blue": [1, 0, 0, 0, 0],
+        "black": [0, 1, 0, 0, 0],
+        "white": [0, 0, 1, 0, 0],
+        "red": [0, 0, 0, 1, 0],
+        "green": [0, 0, 0, 0, 1]
+      };
+
+      const occasionMapping = {
+        "casual": [1, 0],
+        "formal": [0, 1]
+      };
+
+      const inputTensor = tf.tensor2d([[
+        ...colorMapping[shirtColor],
+        ...colorMapping[pantsColor],
+        ...occasionMapping[occasion]
+      ]]);
+
+      const prediction = model.predict(inputTensor);
+      prediction.array().then(score => {
+        const result = score[0][0];
+        const predictionResult = result >= 0.5 ? "Good Outfit Combination!" : "Bad Outfit Combination.";
+        document.getElementById('prediction-result').innerText = predictionResult;
+
+        // Show feedback buttons
+        document.getElementById('good-feedback').style.display = 'inline';
+        document.getElementById('bad-feedback').style.display = 'inline';
+      });
+    }
+
+    function retrainModel(feedback) {
+      const xs = tf.tensor2d([[
+        ...colorMapping[currentOutfit.shirt_color],
+        ...colorMapping[currentOutfit.pants_color],
+        ...occasionMapping[currentOutfit.occasion]
+      ]]);
+
+      const ys = tf.tensor2d([[feedback]]);
+
+      model.fit(xs, ys, {
+        epochs: 10
+      }).then(() => {
+        console.log("Model retrained");
+        saveModelToFirebase(); // Save updated model to Firebase
+      });
+    }
+
+    window.onload = function() {
+      loadModel(); // Load model when the page is loaded
+    };
+  </script>
+</head>
+<body>
+  <h1>Outfit Generator</h1>
+  <form onsubmit="event.preventDefault(); predictOutfit(document.getElementById('shirt').value, document.getElementById('pants').value, document.getElementById('occasion').value);">
+    <label for="shirt">Shirt Color:</label>
+    <select id="shirt">
+      <option value="blue">Blue</option>
+      <option value="black">Black</option>
+      <option value="white">White</option>
+      <option value="red">Red</option>
+      <option value="green">Green</option>
+    </select>
+    <br><br>
+    <label for="pants">Pants Color:</label>
+    <select id="pants">
+      <option value="blue">Blue</option>
+      <option value="black">Black</option>
+      <option value="white">White</option>
+      <option value="red">Red</option>
+      <option value="green">Green</option>
+    </select>
+    <br><br>
+    <label for="occasion">Occasion:</label>
+    <select id="occasion">
+      <option value="casual">Casual</option>
+      <option value="formal">Formal</option>
+    </select>
+    <br><br>
+    <button type="submit">Check Outfit</button>
+  </form>
+  <p id="prediction-result"></p>
+
+  <button id="good-feedback" style="display:none;" onclick="retrainModel(1)">Good Combination</button>
+  <button id="bad-feedback" style="display:none;" onclick="retrainModel(0)">Bad Combination</button>
+</body>
+</html>
